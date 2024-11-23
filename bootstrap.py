@@ -1,6 +1,7 @@
-from flask import Flask, request, send_file
+from flask import Flask, request, jsonify
 import tempfile
 import os
+import base64
 from inference import get_model
 import supervision as sv
 from inference.core.utils.image_utils import load_image_bgr
@@ -10,7 +11,7 @@ import numpy as np
 app = Flask(__name__)
 
 # Load the model once when the server starts
-model = get_model(model_id="yolov8s-640")
+model = get_model(model_id="yolov8x-640")
 
 @app.route('/analyze', methods=['POST'])
 def analyze():
@@ -26,34 +27,28 @@ def analyze():
 
     # Run inference
     results = model.infer(image)[0]
-    results = sv.Detections.from_inference(results)
+    detections = sv.Detections.from_inference(results)
+
+    # Change all labels to "armor-vehicle"
+    detections.labels = ["armor-vehicle"] * len(detections)
 
     # Annotate the image
     annotator = sv.BoxAnnotator(thickness=4)
-    annotated_image = annotator.annotate(image, results)
+    annotated_image = annotator.annotate(image, detections)
     annotator = sv.LabelAnnotator(text_scale=2, text_thickness=2)
-    annotated_image = annotator.annotate(annotated_image, results)
+    annotated_image = annotator.annotate(annotated_image, detections, labels=["armor-vehicle"] * len(detections))
     
-    # Save annotated image to a temporary file
-    with tempfile.NamedTemporaryFile(delete=False, suffix=".jpg") as temp:
-        temp_filename = temp.name
-        cv2.imwrite(temp_filename, annotated_image)
+    # Convert the annotated image to base64
+    _, buffer = cv2.imencode('.jpg', annotated_image)
+    image_base64 = base64.b64encode(buffer).decode('utf-8')
 
-    # Send the file in the response
-    return send_file(temp_filename, mimetype='image/jpeg', as_attachment=True)
+    # Return the response as JSON
+    response = {
+        "annotated_image": image_base64,
+        "detected_vehicles": len(detections)
+    }
+
+    return jsonify(response)
 
 if __name__ == '__main__':
     app.run(host='0.0.0.0', port=3000, debug=True)
-
-# Clean up temporary files after response
-@app.after_request
-def remove_temp_file(response):
-    try:
-        if response.direct_passthrough:
-            return response
-        temp_filename = response.headers.get("Content-Disposition").split("filename=")[-1].strip("\" ")
-        if os.path.exists(temp_filename):
-            os.remove(temp_filename)
-    except Exception as e:
-        app.logger.error(f"Error deleting temporary file: {e}")
-    return response

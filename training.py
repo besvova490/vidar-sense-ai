@@ -1,19 +1,25 @@
 from ultralytics import YOLO
 
-# Навчання YOLOv8
-def train_model():
-    # Завантажуємо базову модель YOLOv8n
-    model = YOLO('yolov8n.pt')
+# Load a model
+model = YOLO("yolov8n.pt")
 
-    # Запускаємо навчання
-    model.train(
-        data='./datasets/data.yaml',  # Шлях до конфігураційного файлу
-        epochs=50,         # Кількість епох
-        imgsz=640,         # Розмір зображень
-        batch=16,          # Розмір батчу
-        name='military_detection',  # Ім'я проекту
-        workers=4          # Кількість потоків для завантаження даних
-    )
+# Train the model
+train_results = model.train(
+    data="./datasets/data.yaml",  # path to dataset YAML
+    epochs=100,  # number of training epochs
+    imgsz=640,  # training image size
+    # device="cpu",  # device to run on, i.e. device=0 or device=0,1,2,3 or device=cpu
+    workers=4,
+    batch=16,
+    name="military_tanks_detection",
+)
 
-if __name__ == "__main__":
-    train_model()
+# Evaluate model performance on the validation set
+metrics = model.val()
+
+# Perform object detection on an image
+results = model("./test-tank.jpg")
+results[0].show()
+
+# Export the model to ONNX format
+path = model.export(format="onnx")  # return path to exported model
